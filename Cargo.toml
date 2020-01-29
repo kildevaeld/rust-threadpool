@@ -13,6 +13,8 @@ A thread pool for running a number of jobs on a fixed set of worker threads.
 """
 keywords = ["threadpool", "thread", "pool", "threading", "parallelism"]
 categories = ["concurrency", "os"]
+edition = "2018"
 
 [dependencies]
-num_cpus = "1.6"
+num_cpus = "1.12"
+crossbeam-channel = "0.4"

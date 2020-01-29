@@ -82,9 +82,10 @@ extern crate num_cpus;
 
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+// use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
+use crossbeam_channel::{unbounded, bounded, Receiver, Sender};
 
 trait FnBox {
     fn call_box(self: Box<Self>);
@@ -96,7 +97,7 @@ impl<F: FnOnce()> FnBox for F {
     }
 }
 
-type Thunk<'a> = Box<FnBox + Send + 'a>;
+type Thunk<'a> = Box<dyn FnBox + Send + 'a>;
 
 struct Sentinel<'a> {
     shared_data: &'a Arc<ThreadPoolSharedData>,
@@ -159,6 +160,7 @@ pub struct Builder {
     num_threads: Option<usize>,
     thread_name: Option<String>,
     thread_stack_size: Option<usize>,
+    queue_len: Option<usize>
 }
 
 impl Builder {
@@ -176,6 +178,7 @@ impl Builder {
             num_threads: None,
             thread_name: None,
             thread_stack_size: None,
+            queue_len: None,
         }
     }
 
@@ -265,6 +268,49 @@ impl Builder {
         self
     }
 
+     /// Set the maximum number of pending jobs that can be queued to
+    /// the [`ThreadPool`]. Once the queue is full further calls will
+    /// block until slots become available. A `len` of 0 will always
+    /// block until a thread is available.  If not specified, defaults
+    /// to unlimited.
+    ///
+    /// [`ThreadPool`]: struct.ThreadPool.html
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if `len` is less-than 0;
+    ///
+    /// # Examples
+    ///
+    /// With a single thread and a queue len of 1, the final execute
+    /// will have to wait until the first job finishes to be queued.
+    ///
+    /// ```
+    /// use std::thread;
+    /// use std::time::Duration;
+    ///
+    /// let pool = threadpool::Builder::new()
+    ///     .num_threads(1)
+    ///     .queue_len(1)
+    ///     .build();
+    ///
+    /// for _ in 0..2 {
+    ///     pool.execute(|| {
+    ///         println!("Hello from a worker thread! I'm going to rest now...");
+    ///         thread::sleep(Duration::from_secs(10));
+    ///         println!("All done!");
+    ///     })
+    /// }
+    ///
+    /// pool.execute(|| {
+    ///   println!("Hello from 10 seconds in the future!");
+    /// });
+    /// ```
+    pub fn queue_len(mut self, size: usize) -> Builder {
+        self.queue_len = Some(size);
+        self
+    }
+
     /// Finalize the [`Builder`] and build the [`ThreadPool`].
     ///
     /// [`Builder`]: struct.Builder.html
@@ -279,7 +325,10 @@ impl Builder {
     ///     .build();
     /// ```
     pub fn build(self) -> ThreadPool {
-        let (tx, rx) = channel::<Thunk<'static>>();
+        let (tx, rx) = self.queue_len.map_or(
+            unbounded(),
+            |len| bounded(len)
+        );
 
         let num_threads = self.num_threads.unwrap_or_else(num_cpus::get);
 
@@ -906,6 +955,7 @@ mod test {
         waiter.wait();
     }
 
+    #[allow(unused_must_use)]
     #[test]
     fn test_massive_task_creation() {
         let test_tasks = 4_200_000;
@@ -927,7 +977,7 @@ mod test {
                     // wait so the pool can be measured
                     b1.wait();
                 }
-
+                
                 tx.send(1).is_ok();
             });
         }
