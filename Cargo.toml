@@ -15,6 +15,14 @@ keywords = ["threadpool", "thread", "pool", "threading", "parallelism"]
 categories = ["concurrency", "os"]
 edition = "2018"
 
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "CHANGES.md",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+]
+
 [dependencies]
-num_cpus = "1.12"
+num_cpus = "1.13"
 crossbeam-channel = "0.4"
