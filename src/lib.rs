@@ -80,12 +80,11 @@
 
 extern crate num_cpus;
 
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-// use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
-use crossbeam_channel::{unbounded, bounded, Receiver, Sender};
 
 trait FnBox {
     fn call_box(self: Box<Self>);
@@ -160,7 +159,7 @@ pub struct Builder {
     num_threads: Option<usize>,
     thread_name: Option<String>,
     thread_stack_size: Option<usize>,
-    queue_len: Option<usize>
+    queue_len: Option<usize>,
 }
 
 impl Builder {
@@ -268,7 +267,7 @@ impl Builder {
         self
     }
 
-     /// Set the maximum number of pending jobs that can be queued to
+    /// Set the maximum number of pending jobs that can be queued to
     /// the [`ThreadPool`]. Once the queue is full further calls will
     /// block until slots become available. A `len` of 0 will always
     /// block until a thread is available.  If not specified, defaults
@@ -325,10 +324,7 @@ impl Builder {
     ///     .build();
     /// ```
     pub fn build(self) -> ThreadPool {
-        let (tx, rx) = self.queue_len.map_or(
-            unbounded(),
-            |len| bounded(len)
-        );
+        let (tx, rx) = self.queue_len.map_or(unbounded(), |len| bounded(len));
 
         let num_threads = self.num_threads.unwrap_or_else(num_cpus::get);
 
@@ -378,7 +374,8 @@ impl ThreadPoolSharedData {
     /// Notify all observers joining this pool if there is no more work to do.
     fn no_work_notify_all(&self) {
         if !self.has_work() {
-            *self.empty_trigger
+            *self
+                .empty_trigger
                 .lock()
                 .expect("Unable to notify all joining threads");
             self.empty_condvar.notify_all();
@@ -617,7 +614,8 @@ impl ThreadPool {
     /// ```
     pub fn set_num_threads(&mut self, num_threads: usize) {
         assert!(num_threads >= 1);
-        let prev_num_threads = self.shared_data
+        let prev_num_threads = self
+            .shared_data
             .max_thread_count
             .swap(num_threads, Ordering::Release);
         if let Some(num_spawn) = num_threads.checked_sub(prev_num_threads) {
@@ -977,7 +975,6 @@ mod test {
                     // wait so the pool can be measured
                     b1.wait();
                 }
-                
                 tx.send(1).is_ok();
             });
         }
